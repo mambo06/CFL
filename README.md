@@ -3,7 +3,21 @@ Implementation of paper "Contrastive Federated Learning with Tabular Data Silos"
 
 To run any specific dataset use:
 ```
-python train.py -d datasetName -e epochNumber
+python train.py -d datasetName -e epochNumber {args}
+```
+Arguments available
+```
+"-d", "--dataset", type=str, default="mnist", help='Name of the dataset to use. It should have a config file with the same name.'
+"-g", "--gpu", dest='gpu', action='store_true',  help='Used to assign GPU as the device, assuming that GPU is available'
+"-m", "--mps", dest='mps', action='store_true',  help='Used to assign MAC M1 GPU as the device, assuming that GPU is available'
+"-ng", "--no_gpu", dest='gpu', action='store_false', help='Used to assign CPU as the device'
+"-dn", "--device_number", type=str, default='0', help='Defines which GPU to use. It is 0 by default'
+"-lc", "--local", dest='local', action='store_true, help='Non federatede learning'
+"-e", "--epoch", type=int, default=5, help='epoch'
+"-c", "--client", type=int, default=4, help='number of client > 1'
+"-cd", "--clientdrop", type=float, default=0, help='percentage of client drop from number of client'
+"-dd", "--datadrop", type=float, default=0, help='percentage of data from in clientdrop'
+"-ci", "--classimbalance", type=float, default=0, help='percentage of class drop from clientdrop'
 ```
 Data Can be downloaded from
 ```
@@ -46,6 +60,7 @@ Data Can be downloaded from
 }
 
 ```
+
 This code was modified from 
 
 SubTab By Talip Ucar
