@@ -37,7 +37,7 @@ def run(config, save_weights=True):
     ds_loaders = []
     datas = []
     for client in range(config["fl_cluster"]):
-        models.append( SubTab(config))
+        # models.append( SubTab(config))
         datas.append(Loader(config, dataset_name=config["dataset"], client = client).trainFL_loader)
 
 
@@ -58,9 +58,12 @@ def run(config, save_weights=True):
     
     for epoch in range(config["epochs"]):
         if epoch==0: 
-            dataDict = {}
+
+            xDict = {}
+            yDict = {}
             for client in range(config["fl_cluster"]):
-                dataDict[client]=[]
+                xDict[client]=[]
+                yDict[client]=[]
         epoch_loss = 0.0
         start = time.process_time()
         for i in tqdm(range(total_batches)):
@@ -104,12 +107,17 @@ def run(config, save_weights=True):
                     y[np.in1d(y,classes)] = 300
 
                 if epoch==0:
-                    dataDict[client].append(y.tolist())
+                    yDict[client].append(y.tolist())
+                    xDict[client].append(x.tolist())
 
-    for k,v in dataDict.items():
-        dataDict[k] = [ x for xs in v for x in xs ]
+    for k,v in yDict.items():
+        yDict[k] = [ x for xs in v for x in xs ]
+    for k,v in xDict.items():
+        xDict[k] = [ x for xs in v for x in xs ]
     # print(dataDict)
-    pd.DataFrame(dataDict).to_csv('data_'+config['dataset']+'_'+str(config['client_drop_rate'])+'_'+str(config['data_drop_rate'])+'_'+str(config['class_imbalance'])+'.csv', index=False)
+    pd.DataFrame(yDict).to_csv('y_'+config['dataset']+'_'+str(config['client_drop_rate'])+'_'+str(config['data_drop_rate'])+'_'+str(config['class_imbalance'])+'.csv', index=False)
+    pd.DataFrame(xDict).to_csv('x_'+config['dataset']+'_'+str(config['client_drop_rate'])+'_'+str(config['data_drop_rate'])+'_'+str(config['class_imbalance'])+'.csv', index=False)
+
 
 
         
