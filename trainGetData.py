@@ -1,4 +1,3 @@
-# https://github.com/AstraZeneca/SubTab
 import copy
 import time
 from tqdm import tqdm

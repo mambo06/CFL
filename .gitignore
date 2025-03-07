@@ -9,3 +9,6 @@ __pycache__/
 *.ipynb
 *.sh
 .DS_Store
+*.pckl
+*.rst
+*.toml
