@@ -12,3 +12,5 @@ __pycache__/
 *.pckl
 *.rst
 *.toml
+catboost_info/
+.ipynb_checkpoints/
