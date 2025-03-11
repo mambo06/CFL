@@ -79,21 +79,19 @@ import torch
 
 
 
-# def main(config):
-#     """Main wrapper function for training routine.
+def main(config):
+    
+    
+    # Disable adding noise since we are in evaluation mode
+    config["add_noise"] = False
+    # Turn off valiation
+    config["validate"] = False
+    # Get all of available training set for evaluation (i.e. no need for validation set)
+    # config["training_data_ratio"] = 0.1
 
-#     Args:
-#         config (dict): Dictionary containing options and arguments.
+    for client in range(config["fl_cluster"]):
 
-#     """
-#     # Set directories (or create if they don't exist)
-#     set_dirs(config)
-#     # Get data loader for first dataset.
-#     ds_loader = Loader(config, dataset_name=config["dataset"])
-#     # Add the number of features in a dataset as the first dimension of the model
-#     config = update_config_with_model_dims(ds_loader, config)
-#     # Start training and save model weights at the end
-#     train(config, ds_loader, save_weights=True)
+        eval.main(config, client)
 
 
 if __name__ == "__main__":
@@ -107,20 +105,10 @@ if __name__ == "__main__":
     dims = copy.deepcopy(config["dims"])
     # Summarize config and arguments on the screen as a sanity check
     # config["shuffle_list"] = [[] for i in range( config["fl_cluster"])] # ordered shuffle each client / federated cluster
-    print_config_summary(config, args)
-    
-    
     #----- Moving to evaluation stage
     # Reset the autoencoder dimension since it was changed in train.py
     config["dims"] = dims
-    # Disable adding noise since we are in evaluation mode
-    config["add_noise"] = False
-    # Turn off valiation
-    config["validate"] = False
-    # Get all of available training set for evaluation (i.e. no need for validation set)
-    # config["training_data_ratio"] = 0.1
-
-    for client in range(config["fl_cluster"]):
-
-        eval.main(config, client)
+    print_config_summary(config, args)
+    main(config)
+    
 
