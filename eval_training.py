@@ -23,7 +23,8 @@ def main(config):
     config["add_noise"] = False
     # Turn off valiation
     config["validate"] = False
-    config["original_dataset"] = False
+    config["original_dataset"] = True
+    config['modeFL'] = True
     # Get all of available training set for evaluation (i.e. no need for validation set)
     # config["training_data_ratio"] = 0.1
 

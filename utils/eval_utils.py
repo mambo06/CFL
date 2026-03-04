@@ -42,12 +42,12 @@ def model_eval(config, z_train, y_train, suffix , z_test=None, y_test=None, desc
         # regularisation_list = [0.01, 0.1 , 1, 10, 1e2, 1e3, 1e4, 1e5, 1e6]
     else :
         regularisation_list = [0.001]
-    regularisation_list = [1] # overide all
+    regularisation_list = [0.01] # overide all
     for c in regularisation_list:
         # Initialize Logistic regression
         print(10 * "*" + "C=" + str(c) + 10 * "*")
-        clf = LogisticRegression(max_iter=1200, solver='lbfgs', C=c)
-        #clf = RandomForestClassifier()
+        # clf = LogisticRegression(max_iter=1200, solver='lbfgs', C=c)
+        clf = RandomForestClassifier()
         # clf = SVC()
         # Fit model to the data
         clf.fit(z_train, y_train)

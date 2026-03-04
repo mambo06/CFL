@@ -226,11 +226,11 @@ class TabularDataset(Dataset):
                   f"to {n_classes} {10 * '<'}")
 
         # Check if the values of features are small enough to work well for neural network
-        if np.max(np.abs(x_train)) > 20:
-            print(f"Pre-processing of data does not seem to be correct. "
-                  f"Max value found in features is {np.max(np.abs(x_train))}\n"
-                  f"Please check the values of features...")
-            exit()
+        # if np.max(np.abs(x_train)) > 20:
+        #     print(f"Pre-processing of data does not seem to be correct. "
+        #           f"Max value found in features is {np.max(np.abs(x_train))}\n"
+        #           f"Please check the values of features...")
+        #     exit()
         # Select features and labels, based on the mode
         if self.mode == "train":
             data = x_train

@@ -41,24 +41,20 @@ class Loader(object):
         paths = config["paths"]
         # data > dataset_name
         file_path = os.path.join(paths["data"], dataset_name)
+        torch.manual_seed(5)
+
         # Get the datasets
-        # train_dataset, test_dataset, validation_dataset, trainFl_dataset = self.get_dataset(dataset_name, file_path)
         trainFl_dataset, validationFl_dataset, test_dataset = self.get_dataset(dataset_name, file_path)
-        # Set the loader for training set
-        torch.manual_seed(5)
-        # self.trainFlImbalance_loader = DataLoader(trainFlImbalance_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
-        # Set the loader for training set
-        # self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=drop_last, **kwargs)
-        # Set the loader for test set
-        torch.manual_seed(5)
-        self.trainFl_loader = DataLoader(trainFl_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
-        # Set the loader for validation set
-        # self.validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last, **kwargs)
-        torch.manual_seed(5)
-        # self.validationFlImbalance_loader = DataLoader(validationFlImbalance_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
-        torch.manual_seed(5)
+        trainNS_dataset, validationNS_dataset, _ = self.get_dataset(dataset_name, file_path, NS=True)
+
+        self.trainFL_loader = DataLoader(trainFl_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
         self.validationFl_loader = DataLoader(validationFl_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
         self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
+
+        self.trainNS_loader = DataLoader(trainNS_dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last, **kwargs)
+        self.validationNS_loader = DataLoader(validationNS_dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last, **kwargs)
+        
+
         
 
     def get_dataset(self, dataset_name, file_path,NS=False):
@@ -78,9 +74,9 @@ class Loader(object):
         # # Test dataset
         test_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='test', client = self.client, NS=NS)
 
-        # trainNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train_fl', client = self.client, NS=NS)
-        # # Test dataset
-        # testNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='test', client = self.client, NS=NS)
+        trainNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train_fl', client = self.client, NS=NS)
+        # Test dataset
+        testNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='test', client = self.client, NS=NS)
         # validation dataset
 
         # validationFlImbalance_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode="validation_imbalance", client = self.client)
@@ -115,7 +111,7 @@ class TabularDataset(Dataset):
         self.paths = config["paths"]
         self.dataset_name = dataset_name
         self.data_path = os.path.join(self.paths["data"], dataset_name)
-        self.ns = NS
+        self.ns = NS # pearson shuffling. if true no pearson needed.
         self.data, self.labels = self._load_data()
         self.transform = transform
         
@@ -192,6 +188,8 @@ class TabularDataset(Dataset):
 
         #shuffle and cut data
         np.random.seed(0) # make sure similar permutation accros client test and validate
+        # data = x_train[:,:x_train.shape[1]//self.config['fl_cluster']]
+        x_train = x_train[:,:x_train.shape[1] - x_train.shape[1]%self.config['fl_cluster']]
         data = x_train
         featShuffle = np.random.permutation(data.shape[1])
         min_lim = int(data.shape[1]/self.config['fl_cluster'] * self.client) 
@@ -358,8 +356,8 @@ class TabularDataset(Dataset):
         n_classes = len(list(set(y_val.reshape(-1, ).tolist())))
         if self.config["n_classes"] != n_classes:
             self.config["n_classes"] = n_classes
-            print(f"{50 * '>'} Number of classes changed "
-                  f"from {self.config['n_classes']} to {n_classes} {50 * '<'}")
+            print(f"{10 * '>'} Number of classes changed "
+                  f"from {self.config['n_classes']} to {n_classes} {10 * '<'}")
 
         # Check if the values of features are small enough to work well for neural network
         if np.max(np.abs(x_val)) > 20:
@@ -389,10 +387,11 @@ class TabularDataset(Dataset):
                   f"Use one of three options: train, validation, and test.")
             exit()
         
-        # if pearson reordering requirements 
-        # if self.ns == False:
-        #     z = self.calculatePearson(x_val)
-        #     data = data[:,z]
+        if self.ns == False:
+            sampling = data[:] # data already suffled
+
+            z = self.calculatePearson(sampling)
+            data = data[:,z]
     
         # Return features, and labels
         return data, labels
