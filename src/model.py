@@ -20,7 +20,7 @@ th.autograd.set_detect_anomaly(True)
 import random
 
 
-class SubTab:
+class CFL:
     """
     Model: Trains an Autoencoder with a Projection network, using SubTab framework.
     """
@@ -49,7 +49,7 @@ class SubTab:
         # self.is_combination = True # set this to true cause z loss 0 ! code realted
         # ------Network---------
         # Instantiate networks
-        print("Building the models for training and evaluation in SubTab framework...")
+        print("Build CFL Network")
         # Set Autoencoders i.e. setting loss, optimizer, and device assignment (GPU, or CPU)
         self.set_autoencoder()
         # Set scheduler (its use is optional)
@@ -581,7 +581,8 @@ class SubTab:
 
         """Used to load weights saved at the end of the training."""
         for model_name in self.model_dict:
-            model = th.load(self._model_path + "/" + model_name + "_"+ prefix + ".pt", map_location=self.device)
+            # model = th.load(self._model_path + "/" + model_name + "_"+ prefix + ".pt", map_location=self.device)
+            model = th.load(self._model_path + "/" + model_name + "_"+ prefix + ".pt", map_location=self.device,weights_only=False)
             setattr(self, model_name, model.eval())
             print(f"--{model_name} is loaded")
         print("Done with loading models.")

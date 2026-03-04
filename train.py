@@ -7,7 +7,7 @@ import mlflow
 import yaml
 
 import eval_training as eval
-from src.model import SubTab
+from src.model import CFL
 from utils.arguments import get_arguments, get_config, print_config_summary
 from utils.load_data import Loader
 from utils.utils import set_dirs, run_with_profiler, update_config_with_model_dims, set_seed
@@ -134,7 +134,7 @@ def run(config, save_weights):
     ds_loader = Loader(config, dataset_name=config["dataset"], client = 0)
     # Add the number of features in a dataset as the first dimension of the model
     config = update_config_with_model_dims(ds_loader, config)
-    global_model = SubTab(config)
+    global_model = CFL(config)
     server = Server(global_model)
     clients = []
     for clt in range(config["fl_cluster"]):
@@ -199,6 +199,7 @@ if __name__ == "__main__":
     args = get_arguments()
     # Get configuration file
     config = get_config(args)
+    config['sampling']=True
     main(config)
     
     

@@ -20,17 +20,7 @@ from sklearn.svm import SVC
 import pickle
 
 
-def linear_model_eval(config, z_train, y_train, suffix , z_test=None, y_test=None, description="Logistic Reg.", nData=None):
-    """Evaluates representations using Logistic Regression model.
-    Args:
-        config (dict): Dictionary that defines options to use
-        z_train (numpy.ndarray): Embeddings to be used when plotting clusters for training set
-        y_train (list): Class labels for training set
-        z_test (numpy.ndarray): Embeddings to be used when plotting clusters for test set
-        y_test (list): Class labels for test set
-        description (str): Used to print out useful description during evaluation
-
-    """
+def model_eval(config, z_train, y_train, suffix , z_test=None, y_test=None, description="Logistic Reg.", nData=None):
     results_list = []
     
     # Print out a useful description
@@ -56,7 +46,7 @@ def linear_model_eval(config, z_train, y_train, suffix , z_test=None, y_test=Non
     for c in regularisation_list:
         # Initialize Logistic regression
         print(10 * "*" + "C=" + str(c) + 10 * "*")
-        clf = LogisticRegression(max_iter=1200, solver='lbfgs', C=c, multi_class='multinomial')
+        clf = LogisticRegression(max_iter=1200, solver='lbfgs', C=c)
         #clf = RandomForestClassifier()
         # clf = SVC()
         # Fit model to the data
@@ -71,20 +61,11 @@ def linear_model_eval(config, z_train, y_train, suffix , z_test=None, y_test=Non
         tr_acc =  precision_recall_fscore_support(y_train, y_hat_train, average='weighted')
         te_acc =  precision_recall_fscore_support(y_test, y_hat_test, average='weighted')
         print("Training score: precision {}, recall {}, F1 {}, support {}".format(tr_acc[0],tr_acc[1],tr_acc[2],tr_acc[3]) )
-        print("Training score: precision {}, recall {}, F1 {}, support {}".format(te_acc[0],te_acc[1],te_acc[2],te_acc[3]) )
+        print("Test score: precision {}, recall {}, F1 {}, support {}".format(te_acc[0],te_acc[1],te_acc[2],te_acc[3]) )
         # Record results
         results_list.append({"model": "LogReg_" + str(c),
                              "train_acc": tr_acc,
                              "test_acc": te_acc})
-       # filename = './results/'+ config['dataset'] +"/" + file_name + '.clf'
-       # pickle.dump(clf, open(filename, 'wb'))
-
-    # File name to use for CSV file
-    # file_name = str(suffix) +\
-    #             "_bs_" + str(config["batch_size"]) + \
-    #             "_zdim_" + str(config["dims"][-1]) + \
-    #             "_epoch_" + str(config["epochs"]) + \
-    #             "_seed_" + str(config["seed"])
 
     
 
@@ -95,8 +76,9 @@ def linear_model_eval(config, z_train, y_train, suffix , z_test=None, y_test=Non
         dict_writer = csv.DictWriter(output_file, keys)
         dict_writer.writeheader()
         dict_writer.writerows(results_list)
-        print(f"{100 * '='}\n")
+        print(f"{10 * '='}\n")
         print(f"Classification results are saved at: {file_path}")
+    return te_acc
 
 
 def plot_clusters(config, z, clabels, suffix , plot_suffix="_inLatentSpace"):

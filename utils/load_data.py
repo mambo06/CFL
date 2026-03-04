@@ -3,7 +3,7 @@
 
 import os
 
-import datatable as dt
+# import datatable as dt
 import numpy as np
 import pandas as pd
 import torch
@@ -222,8 +222,8 @@ class TabularDataset(Dataset):
         n_classes = len(list(set(y_train.reshape(-1, ).tolist())))
         if self.config["n_classes"] != n_classes:
             self.config["n_classes"] = n_classes
-            print(f"{50 * '>'} Number of classes changed "
-                  f"from {self.config['n_classes']} to {n_classes} {50 * '<'}")
+            print(f"{10 * '>'} Number of classes changed "
+                  f"to {n_classes} {10 * '<'}")
 
         # Check if the values of features are small enough to work well for neural network
         if np.max(np.abs(x_train)) > 20:
