@@ -9,7 +9,7 @@ import yaml
 import eval_training as eval
 from src.model import CFL
 from utils.arguments import get_arguments, get_config, print_config_summary
-from utils.load_data import Loader
+from utils.load_data_new import Loader
 from utils.utils import set_dirs, run_with_profiler, update_config_with_model_dims, set_seed
 
 import numpy as np
@@ -185,6 +185,7 @@ def main(config):
     config['cat_policy'] = json.loads(Path('data/'+config["dataset"]+'/info.json').read_text())['cat_policy']
     config['norm'] = json.loads(Path('data/'+config["dataset"]+'/info.json').read_text())['norm']
     config['learning_rate_reducer'] = config['learning_rate']
+    config['modeFL'] = True
     # Get a copy of autoencoder dimensions
     dims = copy.deepcopy(config["dims"])
     cfg = copy.deepcopy(config)
