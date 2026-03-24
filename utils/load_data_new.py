@@ -1,109 +1,137 @@
-# https://github.com/AstraZeneca/SubTab
-
+"""
+Data loader for federated learning with tabular and image datasets.
+Based on: https://github.com/AstraZeneca/SubTab
+"""
 
 import os
-
-# import datatable as dt
 import numpy as np
-import pandas as pd
 import torch
+import h5py
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from sklearn.preprocessing import normalize
+from sklearn.datasets import fetch_covtype
+from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as dts
 import torchvision.transforms as transforms
-import h5py
-import torch
-from sklearn.datasets import fetch_covtype
-from sklearn.preprocessing import normalize
 
 
-class Loader(object):
-    """ Data loader """
+class Loader:
+    """Main data loader for federated learning."""
 
-    def __init__(self, config, dataset_name, client, drop_last=True, shuffle=True, kwargs={}):
-        """Pytorch data loader
+    def __init__(self, config, dataset_name, client, drop_last=True, shuffle=True, kwargs=None):
+        """
+        Initialize Pytorch data loader for federated learning.
 
         Args:
-            config (dict): Dictionary containing options and arguments.
+            config (dict): Configuration dictionary with options and arguments
             dataset_name (str): Name of the dataset to load
-            drop_last (bool): True in training mode, False in evaluation.
-            kwargs (dict): Dictionary for additional parameters if needed
-
+            client (int): Client ID for federated learning
+            drop_last (bool): Whether to drop last incomplete batch
+            shuffle (bool): Whether to shuffle data
+            kwargs (dict): Additional parameters for DataLoader
         """
+        if kwargs is None:
+            kwargs = {}
+            
         self.client = client
-        # Get batch size
-        batch_size = config["batch_size"]
-        # Get config
         self.config = config
-        # Set the paths
+        batch_size = config["batch_size"]
+        
+        # Set data paths
         paths = config["paths"]
-        # data > dataset_name
         file_path = os.path.join(paths["data"], dataset_name)
+        
         torch.manual_seed(5)
 
-        # Get the datasets
-        trainFl_dataset, validationFl_dataset, test_dataset = self.get_dataset(dataset_name, file_path)
-        trainNS_dataset, validationNS_dataset, _ = self.get_dataset(dataset_name, file_path, NS=True)
+        # Get datasets with and without shuffling (NS = No Shuffle for Pearson correlation)
+        train_fl_dataset, validation_fl_dataset, test_dataset = self.get_dataset(
+            dataset_name, file_path, ns=False
+        )
+        train_ns_dataset, validation_ns_dataset, _ = self.get_dataset(
+            dataset_name, file_path, ns=True
+        )
 
-        self.trainFL_loader = DataLoader(trainFl_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
-        self.validationFl_loader = DataLoader(validationFl_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
-        self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, **kwargs)
+        # Create data loaders
+        self.trainFL_loader = DataLoader(
+            train_fl_dataset, batch_size=batch_size, shuffle=shuffle, 
+            drop_last=drop_last, **kwargs
+        )
+        self.validationFl_loader = DataLoader(
+            validation_fl_dataset, batch_size=batch_size, shuffle=shuffle, 
+            drop_last=drop_last, **kwargs
+        )
+        self.test_loader = DataLoader(
+            test_dataset, batch_size=batch_size, shuffle=shuffle, 
+            drop_last=drop_last, **kwargs
+        )
+        self.trainNS_loader = DataLoader(
+            train_ns_dataset, batch_size=batch_size, shuffle=False, 
+            drop_last=drop_last, **kwargs
+        )
+        self.validationNS_loader = DataLoader(
+            validation_ns_dataset, batch_size=batch_size, shuffle=False, 
+            drop_last=drop_last, **kwargs
+        )
 
-        self.trainNS_loader = DataLoader(trainNS_dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last, **kwargs)
-        self.validationNS_loader = DataLoader(validationNS_dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last, **kwargs)
+    def get_dataset(self, dataset_name, file_path, ns=False):
+        """
+        Returns training, validation, and test datasets.
         
-
-        
-
-    def get_dataset(self, dataset_name, file_path,NS=False):
-        
-        """Returns training, validation, and test datasets"""
-        # Create dictionary for loading functions of datasets.
-        # If you add a new dataset, add its corresponding dataset class here in the form 'dataset_name': ClassName
+        Args:
+            dataset_name (str): Name of the dataset
+            file_path (str): Path to dataset files
+            ns (bool): No shuffle flag for Pearson correlation
+            
+        Returns:
+            tuple: (train_dataset, validation_dataset, test_dataset)
+        """
+        # Map dataset names to loader classes
         loader_map = {'default_loader': TabularDataset}
-        # Get dataset. Check if the dataset has a custom class. 
-        # If not, then assume a tabular data with labels in the first column
-        dataset = loader_map[dataset_name] if dataset_name in loader_map.keys() else loader_map['default_loader']
-        # Training and Validation datasets
-        # train_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train', client = self.client)
-        # Training and Validation datasets fort FL
-        # trainFlImbalance_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train_fl_imbalance', client = self.client)
-        trainFl_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train_fl', client = self.client)
-        # # Test dataset
-        test_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='test', client = self.client, NS=NS)
-
-        trainNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='train_fl', client = self.client, NS=NS)
-        # Test dataset
-        testNS_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode='test', client = self.client, NS=NS)
-        # validation dataset
-
-        # validationFlImbalance_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode="validation_imbalance", client = self.client)
-        validationFl_dataset = dataset(self.config, datadir=file_path, dataset_name=dataset_name, mode="validation", client = self.client)
-        # Return
-        # return train_dataset, test_dataset, validation_dataset, trainFl_dataset
-        return trainFl_dataset, validationFl_dataset, test_dataset
+        
+        # Get dataset class (default to TabularDataset)
+        dataset_class = loader_map.get(dataset_name, loader_map['default_loader'])
+        
+        # Create datasets
+        train_fl_dataset = dataset_class(
+            self.config, datadir=file_path, dataset_name=dataset_name, 
+            mode='train_fl', client=self.client, ns=ns
+        )
+        validation_fl_dataset = dataset_class(
+            self.config, datadir=file_path, dataset_name=dataset_name, 
+            mode='validation', client=self.client, ns=ns
+        )
+        test_dataset = dataset_class(
+            self.config, datadir=file_path, dataset_name=dataset_name, 
+            mode='test', client=self.client, ns=ns
+        )
+        
+        return train_fl_dataset, validation_fl_dataset, test_dataset
 
 
-class ToTensorNormalize(object):
+class ToTensorNormalize:
     """Convert ndarrays to Tensors."""
+    
     def __call__(self, sample):
-        # Assumes that min-max scaling is done when pre-processing the data
+        """Assumes min-max scaling is done during preprocessing."""
         return torch.from_numpy(sample).float()
 
 
 class TabularDataset(Dataset):
-    def __init__(self, config, datadir, dataset_name, mode='train', client = 1, transform=ToTensorNormalize(), NS=False):
-        """Dataset class for tabular data format.
+    """Dataset class for tabular data format."""
+    
+    def __init__(self, config, datadir, dataset_name, mode='train', 
+                 client=0, transform=None, ns=False):
+        """
+        Initialize tabular dataset.
 
         Args:
-            config (dict): Dictionary containing options and arguments.
-            datadir (str): The path to the data directory
-            dataset_name (str): Name of the dataset to load
-            mode (bool): Defines whether the data is for Train, Validation, or Test mode
-            transform (func): Transformation function for data
-            
+            config (dict): Configuration dictionary
+            datadir (str): Path to data directory
+            dataset_name (str): Name of the dataset
+            mode (str): 'train_fl', 'validation', or 'test'
+            client (int): Client ID for federated learning
+            transform (callable): Transformation function for data
+            ns (bool): No shuffle flag (skip Pearson reordering if True)
         """
         self.client = client
         self.config = config
@@ -111,373 +139,315 @@ class TabularDataset(Dataset):
         self.paths = config["paths"]
         self.dataset_name = dataset_name
         self.data_path = os.path.join(self.paths["data"], dataset_name)
-        self.ns = NS # pearson shuffling. if true no pearson needed.
+        self.ns = ns  # Skip Pearson correlation reordering if True
+        self.transform = transform or ToTensorNormalize()
+        
+        # Load data
         self.data, self.labels = self._load_data()
-        self.transform = transform
-        
-        
 
     def __len__(self):
-        """Returns number of samples in the data"""
+        """Returns number of samples in the dataset."""
         return len(self.data)
-        # return self.data.shape[0]
 
     def __getitem__(self, idx):
-        """Returns batch"""
+        """Returns a single sample and its label."""
         sample = self.data[idx]
-        cluster = int(self.labels[idx])
+        label = int(self.labels[idx])
         
-        return sample, cluster
+        if self.transform:
+            sample = self.transform(sample)
         
+        return sample, label
 
     def _load_data(self):
+        """
+        Loads dataset and returns features and labels.
+        
+        Returns:
+            tuple: (data, labels) as numpy arrays
+        """
+        # Load appropriate dataset
+        dataset_loaders = {
+            "mnist": self._load_mnist,
+            "blog": self._load_blog,
+            "income": self._load_income,
+            "cifar10": self._load_cifar,
+            "syn": self._load_syn,
+            "covtype": self._load_covtype,
+        }
+        
+        loader_func = dataset_loaders.get(self.dataset_name.lower())
+        if loader_func is None:
+            raise ValueError(
+                f"Dataset '{self.dataset_name}' not found. "
+                f"Available datasets: {list(dataset_loaders.keys())}"
+            )
+        
+        x_train, y_train, x_test, y_test = loader_func()
 
-        """Loads one of many available datasets, and returns features and labels"""
-
-        if self.dataset_name.lower() in ["mnist"]:
-            x_train, y_train, x_test, y_test = self._load_mnist()
-            # print(type(x_train))
-        elif self.dataset_name.lower() in ["blog"]:
-            x_train, y_train, x_test, y_test = self._load_blog()
-        elif self.dataset_name.lower() in ["income"]:
-            x_train, y_train, x_test, y_test = self._load_income()
-        elif self.dataset_name.lower() in ["cifar10"]:
-            x_train, y_train, x_test, y_test = self._load_cifar()
-            # print(type(x_train))
-            x_train = tuple(map(self.rgbToGrey, x_train))
-            x_test = tuple(map(self.rgbToGrey, x_test))
-            
-            x_train, y_train, x_test, y_test = list(x_train), list(y_train), list(x_test), list(y_test)
-
-            for i, item in enumerate(x_train) :
-                # print(item[0,:,:].shape)
-                x_train[i] = np.asarray(item) #.ravel()
-            x_train = np.array(x_train)
-            y_train = np.array(y_train)
-
-            for i, item in enumerate(x_test) :
-                x_test[i] = np.asarray(item ) #[0,:,:]).ravel()
-            x_test = np.array(x_test)
-            y_test = np.array(y_test)
-
-            # gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
-            # print(x_train[0][0]*0.2989 + x_train[0][1]*0.5870 + x_train[0][2]*0.1140)
-            
-            # print(x_train[:5])
-
-        elif self.dataset_name.lower() in ["syn"]:
-            x_train, y_train, x_test, y_test = self._load_syn()
-
-        elif self.dataset_name.lower() in ["covtype"]:
-            x_train, y_train, x_test, y_test = self._load_covtype()
-
-        else:
-            print(f"Given dataset name is not found. Check for typos, or missing condition "
-                  f"in _load_data() of TabularDataset class in utils/load_data_new.py .")
-            exit()
-
-        # print(f"dataset {self.config['dataset']} size {x_train.shape}")
-
-        # Define the ratio of training-validation split, e.g. 0.8
+        # Validate training data ratio
         training_data_ratio = self.config["training_data_ratio"]
-        
-        # If validation is on, and trainin_data_ratio==1, stop and warn
         if self.config["validate"] and training_data_ratio >= 1.0:
-            print(f"training_data_ratio must be < 1.0 if you want to run validation during training.")
-            exit()
+            raise ValueError(
+                "training_data_ratio must be < 1.0 when validation is enabled."
+            )
 
-        #shuffle and cut data
-        np.random.seed(0) # make sure similar permutation accros client test and validate
-        # data = x_train[:,:x_train.shape[1]//self.config['fl_cluster']]
-        x_train = x_train[:,:x_train.shape[1] - x_train.shape[1]%self.config['fl_cluster']]
-        data = x_train
-        featShuffle = np.random.permutation(data.shape[1])
-        min_lim = int(data.shape[1]/self.config['fl_cluster'] * self.client) 
-        max_lim = int(data.shape[1]/self.config['fl_cluster'] * (self.client+1) )
-        # print(featShuffle,min_lim,max_lim)
-        
-        x_train = x_train[:,featShuffle]
-        x_train = x_train[:,min_lim : max_lim]
+        # Feature partitioning for federated learning
+        x_train, x_test = self._partition_features(x_train, x_test)
 
-        x_test = x_test[:,featShuffle]
-        x_test = x_test[:,min_lim : max_lim]
-            
+        # Split training and validation data
+        x_train, y_train, x_val, y_val = self._split_train_val(
+            x_train, y_train, training_data_ratio
+        )
 
-        # Shuffle indexes of samples to randomize training-validation split
-        np.random.seed(np.random.randint(10)) 
-        # idx = np.random.permutation(x_train.shape[0])
-        idx = np.arange(x_train.shape[0])
+        # Apply federated learning modifications (data dropping, class imbalance)
+        if self.config.get('modeFL', False):
+            x_train, x_val = self._apply_fl_modifications(
+                x_train, y_train, x_val, y_val
+            )
 
-        # Divide training and validation data : 
-        # validation data = training_data_ratio:(1-training_data_ratio)
-        idy = len(idx)
-        idy = int(idy * training_data_ratio) 
-        idy = int(idy // self.config['batch_size'] * self.config['batch_size']  + self.config['batch_size'] )
-        tr_idx = idx[:idy]
-        val_idx = idx[idy:]
+        # Update number of classes
+        self._update_num_classes(y_val)
 
-        # Validation data
-        x_val = x_train[val_idx, :]
-        y_val = y_train[val_idx]
+        # Validate data preprocessing
+        self._validate_data(x_val)
 
-        # Training data
-        x_train = x_train[tr_idx, :]
-        y_train = y_train[tr_idx]
+        # Select data based on mode
+        data, labels = self._select_mode_data(
+            x_train, y_train, x_val, y_val, x_test, y_test
+        )
 
-        
-        # cuts = max(self.config["data_drop_rate"], self.config['class_imbalance'])
-        # tr_idx = int(len(tr_idx) * cuts)
-        # val_idx = int(len(val_idx) * cuts)
+        # Apply Pearson correlation reordering if needed
+        if not self.ns:
+            pearson_order = self._calculate_pearson_order(data)
+            data = data[:, pearson_order]
 
-        # x_train_imbalance = x_train[:tr_idx]
-        # y_train_imbalance = y_train[:tr_idx]
-        # x_train = x_train[tr_idx:]
-        # y_train = y_train[tr_idx:]
-
-        # # print(x_train_imbalance)
-
-        # x_val_imbalance = x_val[:val_idx]
-        # y_val_imbalance = y_val[:val_idx]
-        # x_val = x_val[val_idx:]
-        # y_val = y_val[val_idx:]
-
-        if self.config['modeFL'] : # bool true if training FL
-            # print('enter FL mode')
-            if (self.client < int(self.config["fl_cluster"] * self.config["client_drop_rate"])) :
-                # print('enter client drop')
-                # cuts = int((x_train_imbalance.shape[0]+x_train.shape[0]) * self.config["data_drop_rate"])
-                cuts = int((x_train.shape[0]) * self.config["data_drop_rate"])
-                x_train[:cuts] = 0
-
-                # cuts = int(x_train.shape[0] * self.config["data_drop_rate"])
-                # x_train[:cuts] = 0
-
-                # cuts = int((x_val_imbalance.shape[0]+x_val.shape[0]) * self.config["data_drop_rate"])
-                cuts = int((x_val.shape[0]) * self.config["data_drop_rate"])
-                # x_val[:cuts] = 0
-
-                # cuts = int(x_val.shape[0] * self.config["data_drop_rate"])
-                # x_val[:cuts] = 0
-                
-            elif (int(self.config["fl_cluster"] * self.config["client_drop_rate"]) <= self.client < \
-                (
-                    int(self.config["fl_cluster"] * self.config["client_drop_rate"]) \
-                    + int(self.config["fl_cluster"] * self.config["client_imbalance_rate"]))
-                ):
-                # print('enter class imbalance')
-                np.random.seed(0)
-                classes = np.random.choice(self.config["n_classes"], 
-                    self.config["n_classes"] - int(self.config["class_imbalance"] * self.config['n_classes']), 
-                    replace = False )
-
-                x,y,= x_train, y_train
-                idx = np.arange(x.shape[0])
-                idx = idx[np.in1d(y,classes)]
-                # idx = idx[ : int((idx.shape[0]) * self.config['class_imbalance']) ]
-                idx = np.random.choice(idx, size=int((idx.shape[0]) * self.config['class_imbalance']), replace=False)
-                x[idx] = 0
-
-                # x,y = x_train, y_train
-                # idx = np.arange(x.shape[0])
-                # idx = idx[[np.in1d(y,classes)]]
-                # idx = idx[ : int(idx.shape[0] * self.config['class_imbalance']) ]
-                # x[idx] = 0
-
-                x,y = x_val, y_val
-                idx = np.arange(x.shape[0])
-                idx = idx[np.in1d(y,classes)]
-                idx = np.random.choice(idx, size=int((idx.shape[0]) * self.config['class_imbalance']), replace=False)
-                # x[idx] = 0
-
-                # x,y = x_val, y_val
-                # idx = np.arange(x.shape[0])
-                # idx = idx[[np.in1d(y,classes)]]
-                # idx = idx[ : int(idx.shape[0] * self.config['class_imbalance']) ]
-                # x[idx] = 0
-        else: # mode validation
-            print('enter non FL mode')
-            if (self.client < int(self.config["fl_cluster"] * self.config["client_drop_rate"])) :
-
-                cuts = int((x_train.shape[0]) * self.config["data_drop_rate"])
-                x_train = x_train[cuts:]
-                y_train = y_train[cuts:]
-                # cuts = int(x_train.shape[0] * self.config["data_drop_rate"])
-                # x_train = x_train[cuts:]
-
-                cuts = int((x_val.shape[0]) * self.config["data_drop_rate"])
-                # x_val = x_val[cuts:]
-                # y_val = y_val[cuts:]
-
-                # cuts = int(x_val.shape[0] * self.config["data_drop_rate"])
-                # x_val  = x_val[cuts:]
-                
-            elif (int(self.config["fl_cluster"] * self.config["client_drop_rate"]) <= self.client < \
-                (
-                    int(self.config["fl_cluster"] * self.config["client_drop_rate"]) \
-                    + int(self.config["fl_cluster"] * self.config["client_imbalance_rate"]))
-                ):
-                np.random.seed(0)
-                classes = np.random.choice(self.config["n_classes"],     
-                    self.config["n_classes"] - int(self.config["class_imbalance"] * self.config['n_classes']), 
-                    replace = False )
-
-                x,y = x_train, y_train
-                idx = np.arange(x.shape[0])
-                idx = idx[np.in1d(y,classes)]
-                idx = np.random.choice(idx, size=int((idx.shape[0]) * self.config['class_imbalance']), replace=False)
-                x_train = np.delete(x,idx, axis = 0)
-                y_train = np.delete(y,idx, axis = 0)
-
-                # x,y = x_train, y_train
-                # idx = np.arange(x.shape[0])
-                # idx = idx[[np.in1d(y,classes)]]
-                # idx = idx[ : int(idx.shape[0] * self.config['class_imbalance']) ]
-                # x_train_ = np.delete(x,idx, axis = 0)
-
-                x,y = x_val, y_val
-                idx = np.arange(x.shape[0])
-                idx = idx[np.in1d(y,classes)]
-                idx = np.random.choice(idx, size=int((idx.shape[0]) * self.config['class_imbalance']), replace=False)
-                # x_val = np.delete(x,idx, axis = 0)
-                # y_val = np.delete(y,idx, axis = 0)
-
-                # x,y = x_val, y_val
-                # idx = np.arange(x.shape[0])
-                # idx = idx[[np.in1d(y,classes)]]
-                # idx = idx[ : int(idx.shape[0] * self.config['class_imbalance']) ]
-                # x_val = np.delete(x,idx, axis = 0)
-
-
-                # x[np.in1d(y,classes)] = 0  
-
-
-
-        # Update number of classes in the config file in case that it is not correct.
-        n_classes = len(list(set(y_val.reshape(-1, ).tolist())))
-        if self.config["n_classes"] != n_classes:
-            self.config["n_classes"] = n_classes
-            print(f"{10 * '>'} Number of classes changed "
-                  f"from {self.config['n_classes']} to {n_classes} {10 * '<'}")
-
-        # Check if the values of features are small enough to work well for neural network
-        if np.max(np.abs(x_val)) > 20:
-            print(f"Pre-processing of data does not seem to be correct. "
-                  f"Max value found in features is {np.max(np.abs(x_train))}\n"
-                  f"Please check the values of features...")
-            exit()
-        
-        # Select features and labels, based on the mode
-        if self.mode == "train_fl":
-            data = x_train
-            labels = y_train
-        # elif self.mode == "train_fl_imbalance":
-        #     data = x_train_imbalance
-        #     labels = y_train_imbalance
-        elif self.mode == "validation":
-            data = x_val
-            labels = y_val
-        # elif self.mode == "validation_imbalance":
-        #     data = x_val_imbalance
-        #     labels = y_val_imbalance
-        elif self.mode == "test":
-            data = x_test
-            labels = y_test
-        else:
-            print(f"Something is wrong with the data mode. "
-                  f"Use one of three options: train, validation, and test.")
-            exit()
-        
-        if self.ns == False:
-            sampling = data[:] # data already suffled
-
-            z = self.calculatePearson(sampling)
-            data = data[:,z]
-    
-        # Return features, and labels
         return data, labels
 
-    def calculatePearson(self, data):
-        # Pearson Reordering
-        return np.argsort(np.corrcoef(data.T)[0])
-        # return (torch.corrcoef(data.T)[:1,:]).sort()[1][0]
+    def _partition_features(self, x_train, x_test):
+        """Partition features across clients for federated learning."""
+        np.random.seed(0)  # Consistent permutation across clients
+        
+        # Trim features to be divisible by number of clients
+        n_features = x_train.shape[1]
+        n_clients = self.config['fl_cluster']
+        n_features_per_client = n_features // n_clients
+        total_features = n_features_per_client * n_clients
+        
+        x_train = x_train[:, :total_features]
+        x_test = x_test[:, :total_features]
+        
+        # Shuffle and partition features
+        feat_shuffle = np.random.permutation(total_features)
+        min_idx = n_features_per_client * self.client
+        max_idx = n_features_per_client * (self.client + 1)
+        
+        x_train = x_train[:, feat_shuffle][:, min_idx:max_idx]
+        x_test = x_test[:, feat_shuffle][:, min_idx:max_idx]
+        
+        return x_train, x_test
 
+    def _split_train_val(self, x_train, y_train, training_ratio):
+        """Split training data into train and validation sets."""
+        np.random.seed(np.random.randint(10))
+        idx = np.arange(x_train.shape[0])
+        
+        # Calculate split index (aligned to batch size)
+        batch_size = self.config['batch_size']
+        n_train = int(len(idx) * training_ratio)
+        n_train = (n_train // batch_size) * batch_size + batch_size
+        
+        tr_idx = idx[:n_train]
+        val_idx = idx[n_train:]
+        
+        x_val = x_train[val_idx]
+        y_val = y_train[val_idx]
+        x_train = x_train[tr_idx]
+        y_train = y_train[tr_idx]
+        
+        return x_train, y_train, x_val, y_val
 
+    def _apply_fl_modifications(self, x_train, y_train, x_val, y_val):
+        """Apply data dropping and class imbalance for federated learning."""
+        n_clients = self.config['fl_cluster']
+        drop_rate = self.config['client_drop_rate']
+        imbalance_rate = self.config['client_imbalance_rate']
+        
+        # Client data dropping
+        if self.client < int(n_clients * drop_rate):
+            data_drop = self.config['data_drop_rate']
+            n_drop_train = int(x_train.shape[0] * data_drop)
+            n_drop_val = int(x_val.shape[0] * data_drop)
+            
+            x_train[:n_drop_train] = 0
+            x_val[:n_drop_val] = 0
+        
+        # Class imbalance
+        elif (int(n_clients * drop_rate) <= self.client < 
+              int(n_clients * (drop_rate + imbalance_rate))):
+            
+            np.random.seed(0)
+            n_classes = self.config['n_classes']
+            class_imbalance = self.config['class_imbalance']
+            
+            # Select classes to reduce
+            n_reduced_classes = n_classes - int(class_imbalance * n_classes)
+            reduced_classes = np.random.choice(
+                n_classes, n_reduced_classes, replace=False
+            )
+            
+            # Apply to training data
+            train_idx = np.arange(x_train.shape[0])
+            affected_idx = train_idx[np.isin(y_train, reduced_classes)]
+            n_zero = int(len(affected_idx) * class_imbalance)
+            zero_idx = np.random.choice(affected_idx, size=n_zero, replace=False)
+            x_train[zero_idx] = 0
+            
+            # Apply to validation data
+            val_idx = np.arange(x_val.shape[0])
+            affected_idx = val_idx[np.isin(y_val, reduced_classes)]
+            n_zero = int(len(affected_idx) * class_imbalance)
+            zero_idx = np.random.choice(affected_idx, size=n_zero, replace=False)
+            # x_val[zero_idx] = 0  # Uncomment if needed
+        
+        return x_train, x_val
+
+    def _update_num_classes(self, y_val):
+        """Update number of classes in config if needed."""
+        n_classes = len(np.unique(y_val))
+        if self.config["n_classes"] != n_classes:
+            print(f"{'>' * 10} Number of classes changed from "
+                  f"{self.config['n_classes']} to {n_classes} {'<' * 10}")
+            self.config["n_classes"] = n_classes
+
+    def _validate_data(self, x_val):
+        """Check if data preprocessing is correct."""
+        max_val = np.max(np.abs(x_val))
+        if max_val > 20:
+            raise ValueError(
+                f"Data preprocessing may be incorrect. "
+                f"Max absolute value in features is {max_val}. "
+                f"Expected values should be normalized (typically < 20)."
+            )
+
+    def _select_mode_data(self, x_train, y_train, x_val, y_val, x_test, y_test):
+        """Select appropriate data based on mode."""
+        mode_map = {
+            "train_fl": (x_train, y_train),
+            "validation": (x_val, y_val),
+            "test": (x_test, y_test),
+        }
+        
+        if self.mode not in mode_map:
+            raise ValueError(
+                f"Invalid mode '{self.mode}'. "
+                f"Use one of: {list(mode_map.keys())}"
+            )
+        
+        return mode_map[self.mode]
+
+    def _calculate_pearson_order(self, data):
+        """Calculate Pearson correlation ordering for features."""
+        correlation_matrix = np.corrcoef(data.T)
+        return np.argsort(correlation_matrix[0])
+
+    # Dataset loading methods
     def _load_mnist(self):
-        """Loads MNIST dataset"""
+        """Load MNIST dataset."""
+        mnist_path = "./data/mnist"
         
-        self.data_path = os.path.join("./data/", "mnist")
-        
-        with open(self.data_path + '/train.npy', 'rb') as f:
+        with open(f"{mnist_path}/train.npy", 'rb') as f:
             x_train = np.load(f)
             y_train = np.load(f)
-
-        with open(self.data_path + '/test.npy', 'rb') as f:
+        
+        with open(f"{mnist_path}/test.npy", 'rb') as f:
             x_test = np.load(f)
             y_test = np.load(f)
-
-        x_train = x_train.reshape(-1, 28 * 28) / 255.
-        x_test = x_test.reshape(-1, 28 * 28) / 255.
-       
+        
+        # Flatten and normalize
+        x_train = x_train.reshape(-1, 28 * 28) / 255.0
+        x_test = x_test.reshape(-1, 28 * 28) / 255.0
+        
         return x_train, y_train, x_test, y_test
 
     def _load_blog(self):
-       
+        """Load Blog dataset."""
         x_train = np.load("./data/blog/xtrain.npy")
         y_train = np.load("./data/blog/ytrain.npy")
         x_test = np.load("./data/blog/xtest.npy")
         y_test = np.load("./data/blog/ytest.npy")
-       
+        
         return x_train, y_train, x_test, y_test
 
     def _load_income(self):
-       
+        """Load Income dataset."""
         x_train = np.load("./data/income/train_feat_std.npy")
         y_train = np.load("./data/income/train_label.npy")
         x_test = np.load("./data/income/test_feat_std.npy")
         y_test = np.load("./data/income/test_label.npy")
-       
+        
         return x_train, y_train, x_test, y_test
 
     def _load_cifar(self):
-        transform = transforms.Compose(
-            [transforms.ToTensor(),
-            transforms.Normalize( (0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
-
-        train = dts.CIFAR10(root="./data/",train=True,download=False, transform=transform)
-        test = dts.CIFAR10(root="./data/",train=False,download=False, transform=transform)
-
-        x_train,y_train = list(zip(*train))
-        x_test,y_test = list(zip(*test))
-       
-       
+        """Load CIFAR-10 dataset and convert to grayscale."""
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(
+                (0.4914, 0.4822, 0.4465), 
+                (0.247, 0.243, 0.261)
+            )
+        ])
+        
+        train_dataset = dts.CIFAR10(
+            root="./data/", train=True, download=False, transform=transform
+        )
+        test_dataset = dts.CIFAR10(
+            root="./data/", train=False, download=False, transform=transform
+        )
+        
+        x_train, y_train = zip(*train_dataset)
+        x_test, y_test = zip(*test_dataset)
+        
+        # Convert to grayscale and flatten
+        x_train = np.array([self._rgb_to_grey(img) for img in x_train])
+        x_test = np.array([self._rgb_to_grey(img) for img in x_test])
+        y_train = np.array(y_train)
+        y_test = np.array(y_test)
+        
         return x_train, y_train, x_test, y_test
 
     def _load_syn(self):
-        f = h5py.File('./data/syn/syn.hdf5', 'r')
-        np.random.seed(25)
-        inx = np.arange(f['labels'].shape[0])
-        np.random.shuffle(inx)
-       
-        x_train = f['features'][:].T[inx][:-(int(f['labels'].shape[0] *0.1))]
-        y_train = f['labels'][:][inx][:-(int(f['labels'].shape[0] *0.1))]
-        x_test = f['features'][:].T[inx][-(int(f['labels'].shape[0] *0.1)):]
-        y_test = f['labels'][:][inx][-(int(f['labels'].shape[0] *0.1)):]
-        # print(x_train.shape, x_test.shape)   
-       
+        """Load synthetic dataset."""
+        with h5py.File('./data/syn/syn.hdf5', 'r') as f:
+            np.random.seed(25)
+            n_samples = f['labels'].shape[0]
+            idx = np.arange(n_samples)
+            np.random.shuffle(idx)
+            
+            split_idx = int(n_samples * 0.9)
+            
+            x_train = f['features'][:].T[idx][:split_idx]
+            y_train = f['labels'][:][idx][:split_idx]
+            x_test = f['features'][:].T[idx][split_idx:]
+            y_test = f['labels'][:][idx][split_idx:]
+        
         return x_train, y_train, x_test, y_test
 
     def _load_covtype(self):
-        
+        """Load Forest Covertype dataset."""
         cov_type = fetch_covtype()
-        X=normalize(cov_type.data, norm="l1")
-        y=cov_type.target
-        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
+        X = normalize(cov_type.data, norm="l1")
+        y = cov_type.target
+        
+        x_train, x_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=1
+        )
+        
         return x_train, y_train, x_test, y_test
 
-    def rgbToGrey(self,rgb):
-        r = rgb[0]
-        g = rgb[1]
-        b = rgb[2]
-        return (0.2989 * r + 0.5870 * g + 0.1140 * b).flatten()
-
-
+    @staticmethod
+    def _rgb_to_grey(rgb_tensor):
+        """Convert RGB image tensor to grayscale and flatten."""
+        r, g, b = rgb_tensor[0], rgb_tensor[1], rgb_tensor[2]
+        grey = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        return grey.flatten().numpy()

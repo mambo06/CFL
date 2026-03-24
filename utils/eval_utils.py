@@ -1,4 +1,7 @@
-# https://github.com/AstraZeneca/SubTab
+"""
+Evaluation utilities for model assessment and visualization.
+Based on: https://github.com/AstraZeneca/SubTab
+"""
 
 import csv
 import functools
@@ -8,293 +11,458 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import precision_recall_fscore_support
-
-from utils.utils import tsne
-from utils.colors import get_color_list
 import torch as th
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_recall_fscore_support
 from sklearn.svm import SVC
-import pickle
+
+from utils.colors import get_color_list
+from utils.utils import tsne
 
 
-def model_eval(config, z_train, y_train, suffix , z_test=None, y_test=None, description="Logistic Reg.", nData=None):
+def model_eval(config, z_train, y_train, suffix, z_test=None, y_test=None, 
+               description="Logistic Regression", nData=None):
+    """
+    Evaluate model using classification metrics.
+    
+    Args:
+        config (dict): Configuration dictionary.
+        z_train (np.ndarray): Training features.
+        y_train (np.ndarray): Training labels.
+        suffix (str): Filename suffix.
+        z_test (np.ndarray, optional): Test features.
+        y_test (np.ndarray, optional): Test labels.
+        description (str): Description of evaluation method.
+        nData (int, optional): Number of data samples.
+    
+    Returns:
+        tuple: (precision, recall, f1_score, support) for test set.
+    """
+    print("\n" + ">" * 10 + " " + description)
+    
+    # Generate filename
+    filename = _generate_filename(config, suffix)
+    
+    # Define regularization parameters
+    if nData is None:
+        c_values = [0.0001, 1, 10]
+    else:
+        c_values = [0.001]
+    
+    # Override with single value for consistency
+    c_values = [0.01]
+    
     results_list = []
     
-    # Print out a useful description
-    print(10 * ">" + description)
-
-    prefix = str(suffix) + str(config['epochs']) + "e-" + str(config["fl_cluster"]) + "c-"  \
-        + str(config["client_drop_rate"]) + "cd-" + str(config["data_drop_rate"])\
-        + "dd-" + str(config["client_imbalance_rate"]) + "nc-" + str(config["class_imbalance"]) \
-        + "ci-" + str(config["dataset"]) + "-" 
-
-    if config["local"] : prefix += "local"
-    else : prefix += "FL"
-
-    file_name = prefix
-    
-    # Sweep regularization parameter to see what works best for logistic regression
-    if (nData == None):
-        regularisation_list = [0.0001, 1,10]
-        # regularisation_list = [0.01, 0.1 , 1, 10, 1e2, 1e3, 1e4, 1e5, 1e6]
-    else :
-        regularisation_list = [0.001]
-    regularisation_list = [0.01] # overide all
-    for c in regularisation_list:
-        # Initialize Logistic regression
-        print(10 * "*" + "C=" + str(c) + 10 * "*")
+    # Evaluate for each regularization parameter
+    for c in c_values:
+        print(f"\n{'*' * 10} C={c} {'*' * 10}")
+        
+        # Initialize classifier
         # clf = LogisticRegression(max_iter=1200, solver='lbfgs', C=c)
-        clf = RandomForestClassifier()
-        # clf = SVC()
-        # Fit model to the data
+        clf = RandomForestClassifier(random_state=42, n_estimators=100)
+        # clf = SVC(C=c, kernel='rbf', random_state=42)
+        
+        # Train classifier
         clf.fit(z_train, y_train)
+        
+        # Make predictions
         y_hat_train = clf.predict(z_train)
         y_hat_test = clf.predict(z_test)
-        # Score for training set
-        # tr_acc = clf.score(z_train, y_train)
-        # Score for test set
-        # te_acc = clf.score(z_test, y_test)
+        
+        # Calculate metrics
+        train_metrics = precision_recall_fscore_support(
+            y_train, y_hat_train, average='weighted'
+        )
+        test_metrics = precision_recall_fscore_support(
+            y_test, y_hat_test, average='weighted'
+        )
+        
         # Print results
-        tr_acc =  precision_recall_fscore_support(y_train, y_hat_train, average='weighted')
-        te_acc =  precision_recall_fscore_support(y_test, y_hat_test, average='weighted')
-        print("Training score: precision {}, recall {}, F1 {}, support {}".format(tr_acc[0],tr_acc[1],tr_acc[2],tr_acc[3]) )
-        print("Test score: precision {}, recall {}, F1 {}, support {}".format(te_acc[0],te_acc[1],te_acc[2],te_acc[3]) )
+        print(f"Training  - Precision: {train_metrics[0]:.4f}, "
+              f"Recall: {train_metrics[1]:.4f}, "
+              f"F1: {train_metrics[2]:.4f}")
+        print(f"Test      - Precision: {test_metrics[0]:.4f}, "
+              f"Recall: {test_metrics[1]:.4f}, "
+              f"F1: {test_metrics[2]:.4f}")
+        
         # Record results
-        results_list.append({"model": "LogReg_" + str(c),
-                             "train_acc": tr_acc,
-                             "test_acc": te_acc})
-
+        results_list.append({
+            "model": f"RandomForest_C{c}",
+            "train_precision": train_metrics[0],
+            "train_recall": train_metrics[1],
+            "train_f1": train_metrics[2],
+            "test_precision": test_metrics[0],
+            "test_recall": test_metrics[1],
+            "test_f1": test_metrics[2],
+        })
     
+    # Save results
+    _save_results(config, filename, results_list)
+    
+    return test_metrics
 
-    # Save results as a csv file
+
+def _generate_filename(config, suffix):
+    """
+    Generate filename for saving results.
+    
+    Args:
+        config (dict): Configuration dictionary.
+        suffix (str): Filename suffix.
+    
+    Returns:
+        str: Generated filename.
+    """
+    mode = "local" if config.get("local", False) else "FL"
+    
+    filename = (
+        f"{suffix}"
+        f"{config['epochs']}e-"
+        f"{config['fl_cluster']}c-"
+        f"{config['client_drop_rate']}cd-"
+        f"{config['data_drop_rate']}dd-"
+        f"{config['client_imbalance_rate']}nc-"
+        f"{config['class_imbalance']}ci-"
+        f"{config['dataset']}-"
+        f"{mode}"
+    )
+    
+    return filename
+
+
+def _save_results(config, filename, results_list):
+    """
+    Save evaluation results to CSV file.
+    
+    Args:
+        config (dict): Configuration dictionary.
+        filename (str): Filename for saving.
+        results_list (list): List of result dictionaries.
+    """
+    # Create directory if it doesn't exist
+    results_dir = f"./results/{config['dataset']}"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Full file path
+    file_path = os.path.join(results_dir, f"{filename}.csv")
+    
+    # Save to CSV
     keys = results_list[0].keys()
-    file_path = './results/'+ config['dataset'] +"/" + file_name + '.csv'
-    with open(file_path, 'w', newline='')  as output_file:
+    with open(file_path, 'w', newline='') as output_file:
         dict_writer = csv.DictWriter(output_file, keys)
         dict_writer.writeheader()
         dict_writer.writerows(results_list)
-        print(f"{10 * '='}\n")
-        print(f"Classification results are saved at: {file_path}")
-    return te_acc
+    
+    print(f"\n{'=' * 10}")
+    print(f"✓ Results saved to: {file_path}")
 
 
-def plot_clusters(config, z, clabels, suffix , plot_suffix="_inLatentSpace"):
-    """Wrapper function to visualise clusters
-
-    Args:
-        config (dict): Dictionary that defines options to use
-        z (numpy.ndarray): Embeddings to be used when plotting clusters
-        clabels (list): Class labels
-        plot_suffix (str): Suffix to use for plot name
-
+def plot_clusters(config, z, clabels, suffix, plot_suffix="_inLatentSpace"):
     """
-    # Number of columns for legends, where each column corresponds to a cluster
-    ncol = len(list(set(clabels)))
-    # clegends = ["A", "B", "C", "D", ...]..choose first ncol characters, one per cluster
-    clegends = list("0123456789")[0:ncol]
-    # Show clusters only
-    visualise_clusters(config, z, clabels, suffix, plt_name="classes" + plot_suffix, legend_title="Classes",
-                       legend_labels=clegends)
-
-
-def visualise_clusters(config, embeddings, labels, suffix, plt_name="test", alpha=1.0, legend_title=None, legend_labels=None,
-                       ncol=1):
-    """Function to plot clusters using embeddings from t-SNE and PCA
-
+    Wrapper function to visualize clusters.
+    
     Args:
-        config (dict): Options and arlguments used
-        embeddings (ndarray): Embeddings
-        labels (list): Class labels
-        plt_name (str): Name to be used for the plot when saving.
-        alpha (float): Defines transparency of data poinnts in the scatter plot
-        legend_title (str): Legend title
-        legend_labels ([str]): Defines labels to use for legends
-        ncol (int): Defines number of columns to use for legends of the plot
-
+        config (dict): Configuration dictionary.
+        z (np.ndarray): Embeddings for plotting.
+        clabels (np.ndarray): Class labels.
+        suffix (str): Filename suffix.
+        plot_suffix (str): Additional suffix for plot name.
     """
-    # Define colors to be used for each class/cluster
+    # Get unique labels
+    n_clusters = len(np.unique(clabels))
+    
+    # Create legend labels
+    cluster_legends = [str(i) for i in range(n_clusters)]
+    
+    # Visualize clusters
+    visualise_clusters(
+        config, z, clabels, suffix,
+        plt_name=f"classes{plot_suffix}",
+        legend_title="Classes",
+        legend_labels=cluster_legends
+    )
+
+
+def visualise_clusters(config, embeddings, labels, suffix, plt_name="test",
+                       alpha=1.0, legend_title=None, legend_labels=None, ncol=1):
+    """
+    Plot clusters using PCA and t-SNE embeddings.
+    
+    Args:
+        config (dict): Configuration dictionary.
+        embeddings (np.ndarray): High-dimensional embeddings.
+        labels (np.ndarray): Class labels.
+        suffix (str): Filename suffix.
+        plt_name (str): Plot filename.
+        alpha (float): Transparency of scatter points.
+        legend_title (str): Title for legend.
+        legend_labels (list): Labels for legend.
+        ncol (int): Number of columns in legend.
+    """
+    # Get color palette
     color_list, _ = get_color_list()
-    # Used to adjust space for legends based on number of columns in the legend. ncol: subplot_adjust
-    legend_space_adjustment = {"1": 0.9, "2": 0.9, "3": 0.75, "4": 0.65, "5": 0.65}
-    # Initialize an empty dictionary to hold the mapping for color palette
-    palette = {}
-    # Map colors to the indexes.
-    for i in range(len(color_list)):
-        palette[str(i)] = color_list[i]
-    # Make sure that the labels are 1D arrays
-    y = labels.reshape(-1, )
-    # Turn labels to a list
+    palette = {str(i): color_list[i] for i in range(len(color_list))}
+    
+    # Prepare labels
+    y = labels.reshape(-1)
     y = list(map(str, y.tolist()))
-    # Define number of sub-plots to draw. In this case, 2, one for PCA, and one for t-SNE
-    img_n = 2
-    # Initialize subplots
-    fig, axs = plt.subplots(1, img_n, figsize=(9, 3.5), facecolor='w', edgecolor='k')
-    # Adjust the whitespace around sub-plots
-    fig.subplots_adjust(hspace=.1, wspace=.1)
-    # adjust the ticks of axis.
-    plt.tick_params(axis='both', which='both', left=False, right=False, bottom=False, top=False, labelbottom=False)
-    # Flatten axes if we have more than 1 plot. Or, return a list of 2 axs to make it compatible with multi-plot case.
-    axs = axs.ravel() if img_n > 1 else [axs, axs]
-    # Get 2D embeddings, using PCA
-    pca = PCA(n_components=2)
-    # Fit training data and transform
-    embeddings_pca = pca.fit_transform(embeddings)  # if embeddings.shape[1]>2 else embeddings
-    # Set the title of the sub-plot
-    axs[0].title.set_text('Embeddings from PCA')
-    # Plot samples, using each class label to define the color of the class.
-    sns_plt = sns.scatterplot(x=embeddings_pca[:, 0], y=embeddings_pca[:, 1], ax=axs[0], palette=palette, hue=y, s=20,
-                              alpha=alpha)
-    # Overwrite legend labels
-    overwrite_legends(sns_plt, fig, ncol=ncol, labels=legend_labels, title=legend_title)
-    # Get 2D embeddings, using t-SNE
-    embeddings_tsne = tsne(embeddings)  # if embeddings.shape[1]>2 else embeddings
-    # Set the title of the sub-plot
-    axs[1].title.set_text('Embeddings from t-SNE')
-    # Plot samples, using each class label to define the color of the class.
-    sns_plt = sns.scatterplot(x=embeddings_tsne[:, 0], y=embeddings_tsne[:, 1], ax=axs[1], palette=palette, hue=y, s=20,
-                              alpha=alpha)
-    # Overwrite legend labels
-    overwrite_legends(sns_plt, fig, ncol=ncol, labels=legend_labels, title=legend_title)
-    # Remove legends in sub-plots
-    axs[0].get_legend().remove()
-    axs[1].get_legend().remove()
-    # Adjust the scaling factor to fit your legend text completely outside the plot
-    # (smaller value results in more space being made for the legend)
-    plt.subplots_adjust(right=legend_space_adjustment[str(ncol)])
-    # Get the path to the project root
-    root_path = os.path.dirname(os.path.dirname(__file__))
-    # Define the path to save the plot to.
-    fig_path = os.path.join(root_path, "results", config["framework"], "evaluation", "clusters", suffix + plt_name + ".png")
-    # Define tick params
-    plt.tick_params(axis=u'both', which=u'both', length=0)
-    # Save the plot
-    plt.savefig(fig_path, bbox_inches="tight")
-    # plt.show()
-    # Clear figure just in case if there is a follow-up plot.
-    plt.clf()
+    
+    # Create subplots
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5), facecolor='w')
+    fig.subplots_adjust(hspace=0.1, wspace=0.3)
+    
+    # PCA visualization
+    pca = PCA(n_components=2, random_state=42)
+    embeddings_pca = pca.fit_transform(embeddings)
+    
+    axs[0].set_title('PCA Projection', fontsize=14, fontweight='bold')
+    sns.scatterplot(
+        x=embeddings_pca[:, 0], y=embeddings_pca[:, 1],
+        ax=axs[0], palette=palette, hue=y, s=20, alpha=alpha, legend=False
+    )
+    axs[0].set_xlabel('PC1', fontsize=12)
+    axs[0].set_ylabel('PC2', fontsize=12)
+    
+    # t-SNE visualization
+    embeddings_tsne = tsne(embeddings)
+    
+    axs[1].set_title('t-SNE Projection', fontsize=14, fontweight='bold')
+    sns_plt = sns.scatterplot(
+        x=embeddings_tsne[:, 0], y=embeddings_tsne[:, 1],
+        ax=axs[1], palette=palette, hue=y, s=20, alpha=alpha
+    )
+    axs[1].set_xlabel('t-SNE 1', fontsize=12)
+    axs[1].set_ylabel('t-SNE 2', fontsize=12)
+    
+    # Configure legend
+    _configure_legend(sns_plt, fig, ncol, legend_labels, legend_title)
+    
+    # Remove individual legends
+    if axs[1].get_legend():
+        axs[1].get_legend().remove()
+    
+    # Adjust layout
+    plt.tight_layout()
+    plt.subplots_adjust(right=0.85)
+    
+    # Save figure
+    _save_plot(config, suffix, plt_name)
+    
+    plt.close()
 
 
-def overwrite_legends(sns_plt, fig, ncol, labels, title=None):
-    """Overwrites the legend of the plot
-
-    Args:
-        sns_plt (object): Seaborn plot object to manage legends
-        c2l (dict): Dictionary mapping classes to labels
-        fig (object): Figure to be edited
-        ncol (int): Number of columns to use for legends
-        title (str): Title of legend
-        labels (list): Class labels
-
+def _configure_legend(sns_plt, fig, ncol, labels, title=None):
     """
-    # Get legend handles and labels
+    Configure plot legend.
+    
+    Args:
+        sns_plt: Seaborn plot object.
+        fig: Matplotlib figure object.
+        ncol (int): Number of columns in legend.
+        labels (list): Legend labels.
+        title (str, optional): Legend title.
+    """
+    # Get handles and labels
     handles, legend_txts = sns_plt.get_legend_handles_labels()
-    # Turn str to int before sorting ( to avoid wrong sort order such as having '10' in front of '4' )
+    
+    # Sort by numeric value
     legend_txts = [int(d) for d in legend_txts]
-    # Sort both handle and texts so that they show up in a alphabetical order on the plot
-    legend_txts, handles = (list(t) for t in zip(*sorted(zip(legend_txts, handles))))
-    # Define the figure title
+    legend_txts, handles = zip(*sorted(zip(legend_txts, handles)))
+    
+    # Create legend
     title = title or "Cluster"
-    # Overwrite the legend labels and add a title to the legend
-    fig.legend(handles, labels, loc="center right", borderaxespad=0.1, title=title, ncol=ncol)
+    fig.legend(
+        handles, labels, loc="center right",
+        borderaxespad=0.1, title=title, ncol=ncol,
+        frameon=True, fontsize=10
+    )
+    
+    # Clean up axes
     sns_plt.set(xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)
     sns_plt.tick_params(top=False, bottom=False, left=False, right=False)
 
 
-def save_np2csv(np_list, save_as="test.csv"):
-    """Saves a list of numpy arrays to a csv file
-
-    Args:
-        np_list (list[numpy.ndarray]): List of numpy arrays
-        save_as (str): File name to be used when saving
-
+def _save_plot(config, suffix, plt_name):
     """
-    # Get numpy arrays and label lists
-    Xtr, ytr = np_list
-    # Turn label lists into numpy arrays
-    ytr = np.array(ytr, dtype=np.int8)
-    # Get column names
-    columns = ["label"] + list(map(str, list(range(Xtr.shape[1]))))
-    # Concatenate "scaled" features and labels
-    data_tr = np.concatenate((ytr.reshape(-1, 1), Xtr), axis=1)
-    # Generate new dataframes with "scaled features" and labels
-    df_tr = pd.DataFrame(data=data_tr, columns=columns)
-    # Show samples from scaled data
-    print("Samples from the dataframe:")
-    print(df_tr.head())
-    # Save the dataframe as csv file
-    df_tr.to_csv(save_as, index=False)
-    # Print an informative message
-    print(f"The dataframe is saved as {save_as}")
+    Save plot to file.
+    
+    Args:
+        config (dict): Configuration dictionary.
+        suffix (str): Filename suffix.
+        plt_name (str): Plot name.
+    """
+    # Create directory
+    root_path = os.path.dirname(os.path.dirname(__file__))
+    plot_dir = os.path.join(
+        root_path, "results", config["framework"],
+        "evaluation", "clusters"
+    )
+    os.makedirs(plot_dir, exist_ok=True)
+    
+    # Save plot
+    fig_path = os.path.join(plot_dir, f"{suffix}{plt_name}.png")
+    plt.savefig(fig_path, bbox_inches="tight", dpi=300)
+    
+    print(f"✓ Plot saved to: {fig_path}")
+
+
+def save_np2csv(np_list, save_as="test.csv"):
+    """
+    Save numpy arrays to CSV file.
+    
+    Args:
+        np_list (list): List containing [features, labels].
+        save_as (str): Output filename.
+    """
+    # Extract features and labels
+    X, y = np_list
+    y = np.array(y, dtype=np.int8)
+    
+    # Create column names
+    columns = ["label"] + [str(i) for i in range(X.shape[1])]
+    
+    # Concatenate data
+    data = np.concatenate((y.reshape(-1, 1), X), axis=1)
+    
+    # Create DataFrame
+    df = pd.DataFrame(data=data, columns=columns)
+    
+    # Save to CSV
+    df.to_csv(save_as, index=False)
+    
+    print(f"✓ DataFrame saved to: {save_as}")
+    print(f"  Shape: {df.shape}")
+    print(f"  Preview:\n{df.head()}")
 
 
 def append_tensors_to_lists(list_of_lists, list_of_tensors):
-    """Appends tensors in a list to a list after converting tensors to numpy arrays
-
-    Args:
-        list_of_lists (list[lists]): List of lists, each of which holds arrays
-        list_of_tensors (list[torch.tensorFloat]): List of Pytorch tensors
-
-    Returns:
-        list_of_lists (list[lists]): List of lists, each of which holds arrays
-
     """
-    # Go through each tensor and corresponding list
-    for i in range(len(list_of_tensors)):
-        # Convert tensor to numpy and append it to the corresponding list
-        list_of_lists[i] += [list_of_tensors[i].cpu().numpy()]
-    # Return the lists
+    Append tensors to lists after converting to numpy arrays.
+    
+    Args:
+        list_of_lists (list): List of lists to append to.
+        list_of_tensors (list): List of PyTorch tensors.
+    
+    Returns:
+        list: Updated list of lists.
+    """
+    for i, tensor in enumerate(list_of_tensors):
+        list_of_lists[i].append(tensor.cpu().numpy())
+    
     return list_of_lists
 
 
 def concatenate_lists(list_of_lists):
-    """Concatenates each list with the main list to a numpy array
-
-    Args:
-        list_of_lists (list[lists]): List of lists, each of which holds arrays
-
-    Returns:
-        (list[numpy.ndarray]): List containing numpy arrays
-
     """
-    list_of_np_arrs = []
-    # Pick a list of numpy arrays ([np_arr1, np_arr2, ...]), concatenate numpy arrs to a single one (np_arr_big),
-    # and append it back to the list ([np_arr_big1, np_arr_big2, ...])
-    for list_ in list_of_lists:
-        list_of_np_arrs.append(np.concatenate(list_))
-    # Return numpy arrays
-    return list_of_np_arrs[0] if len(list_of_np_arrs) == 1 else list_of_np_arrs
+    Concatenate lists of numpy arrays.
+    
+    Args:
+        list_of_lists (list): List of lists containing numpy arrays.
+    
+    Returns:
+        np.ndarray or list: Concatenated arrays.
+    """
+    concatenated = [np.concatenate(lst) for lst in list_of_lists]
+    
+    return concatenated[0] if len(concatenated) == 1 else concatenated
 
 
 def aggregate(latent_list, config):
-    """Aggregates the latent representations of subsets to obtain joint representation
-
-    Args:
-        latent_list (list[torch.FloatTensor]): List of latent variables, one for each subset
-        config (dict): Dictionary holding the configuration
-
-    Returns:
-        (torch.FloatTensor): Joint representation
-
     """
-    # Initialize the joint representation
-    latent = None
+    Aggregate latent representations from multiple subsets.
     
-    # Aggregation of latent representations
-    if config["aggregation"]=="mean":
-        latent = sum(latent_list)/len(latent_list)
-    elif config["aggregation"]=="sum":
-        latent = sum(latent_list)
-    elif config["aggregation"]=="concat":
-        latent = th.cat(latent_list, dim=-1)
-    elif config["aggregation"]=="max":
-        latent = functools.reduce(th.max, latent_list)
-    elif config["aggregation"]=="min":
-        latent = functools.reduce(th.min, latent_list)
+    Args:
+        latent_list (list): List of latent representations (torch tensors).
+        config (dict): Configuration dictionary.
+    
+    Returns:
+        torch.Tensor: Aggregated representation.
+    
+    Raises:
+        ValueError: If aggregation method is not recognized.
+    """
+    aggregation_method = config.get("aggregation", "mean")
+    
+    if aggregation_method == "mean":
+        return sum(latent_list) / len(latent_list)
+    
+    elif aggregation_method == "sum":
+        return sum(latent_list)
+    
+    elif aggregation_method == "concat":
+        return th.cat(latent_list, dim=-1)
+    
+    elif aggregation_method == "max":
+        return functools.reduce(th.max, latent_list)
+    
+    elif aggregation_method == "min":
+        return functools.reduce(th.min, latent_list)
+    
     else:
-        print("Proper aggregation option is not provided. Please check the config file.")
-        exit()
-        
-    return latent
+        raise ValueError(
+            f"Unknown aggregation method: {aggregation_method}. "
+            f"Valid options: mean, sum, concat, max, min"
+        )
+
+
+def compute_metrics(y_true, y_pred, average='weighted'):
+    """
+    Compute classification metrics.
+    
+    Args:
+        y_true (np.ndarray): True labels.
+        y_pred (np.ndarray): Predicted labels.
+        average (str): Averaging method for multi-class metrics.
+    
+    Returns:
+        dict: Dictionary containing precision, recall, f1, and support.
+    """
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true, y_pred, average=average
+    )
+    
+    return {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'support': support
+    }
+
+
+def print_metrics(metrics, dataset_name="Test"):
+    """
+    Print metrics in a formatted way.
+    
+    Args:
+        metrics (dict): Dictionary of metrics.
+        dataset_name (str): Name of dataset (e.g., "Train", "Test").
+    """
+    print(f"\n{dataset_name} Metrics:")
+    print(f"  Precision: {metrics['precision']:.4f}")
+    print(f"  Recall:    {metrics['recall']:.4f}")
+    print(f"  F1 Score:  {metrics['f1']:.4f}")
+    if 'support' in metrics:
+        print(f"  Support:   {metrics['support']}")
+
+
+# Example usage
+if __name__ == "__main__":
+    # Example: Test aggregation methods
+    latent1 = th.randn(32, 128)
+    latent2 = th.randn(32, 128)
+    latent_list = [latent1, latent2]
+    
+    config = {"aggregation": "mean"}
+    
+    aggregated = aggregate(latent_list, config)
+    print(f"Aggregated shape: {aggregated.shape}")
+    
+    # Example: Test metrics computation
+    y_true = np.array([0, 1, 2, 0, 1, 2])
+    y_pred = np.array([0, 2, 1, 0, 1, 2])
+    
+    metrics = compute_metrics(y_true, y_pred)
+    print_metrics(metrics)

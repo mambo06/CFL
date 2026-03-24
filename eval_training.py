@@ -1,96 +1,185 @@
-# https://github.com/AstraZeneca/SubTab
-
-
-import copy
-import eval
-from utils.arguments import get_arguments, get_config, print_config_summary
+"""
+Federated Learning Evaluation Script
+Based on: https://github.com/AstraZeneca/SubTab
+"""
 
 import json
 from pathlib import Path
 import numpy as np
 
+import eval
+from utils.arguments import get_arguments, get_config
 
 
-def main(config):
+def load_dataset_info(dataset_name):
+    """
+    Load dataset information from JSON file.
     
+    Args:
+        dataset_name (str): Name of the dataset
+        
+    Returns:
+        dict: Dataset information including task_type, cat_policy, and norm
+    """
+    info_path = Path(f'data/{dataset_name}/info.json')
+    
+    if not info_path.exists():
+        raise FileNotFoundError(f"Dataset info file not found: {info_path}")
+    
+    return json.loads(info_path.read_text())
+
+
+def configure_for_evaluation(config):
+    """
+    Configure settings for evaluation mode.
+    
+    Args:
+        config (dict): Configuration dictionary
+        
+    Returns:
+        dict: Updated configuration
+    """
+    # Load dataset information
+    dataset_info = load_dataset_info(config["dataset"])
+    
+    # Update config with dataset info
     config["framework"] = config["dataset"]
-    config['task_type'] = json.loads(Path('data/'+config["dataset"]+'/info.json').read_text())['task_type']
-    config['cat_policy'] = json.loads(Path('data/'+config["dataset"]+'/info.json').read_text())['cat_policy']
-    config['norm'] = json.loads(Path('data/'+config["dataset"]+'/info.json').read_text())['norm']
+    config['task_type'] = dataset_info['task_type']
+    config['cat_policy'] = dataset_info['cat_policy']
+    config['norm'] = dataset_info['norm']
     config['learning_rate_reducer'] = config['learning_rate']
-    # Get a copy of autoencoder dimensions
-    # Disable adding noise since we are in evaluation mode
+    
+    # Evaluation mode settings
     config["add_noise"] = False
-    # Turn off valiation
     config["validate"] = False
     config["original_dataset"] = True
     config['modeFL'] = True
-    # Get all of available training set for evaluation (i.e. no need for validation set)
-    # config["training_data_ratio"] = 0.1
-
-    all_results = []
-    for client in range(config["fl_cluster"]):
-
-        results = eval.main(config, client)
-        all_results.append(results)
+    config['sampling'] = True
+    
+    return config
 
 
-    oriPrecL, oriRecL, oriFL = [], [], []
-    embedPrecL, embedRecL, embedFL = [], [], []
-
-    for item in all_results:
-        print(item)
-        ori, embed = item
-        if ori is not None:
-            oriPrec, oriRec, oriF, _ = ori
-            oriPrecL.append(oriPrec)
-            oriRecL.append(oriRec)
-            oriFL.append(oriF)
+def aggregate_results(all_results):
+    """
+    Aggregate results from all clients.
+    
+    Args:
+        all_results (list): List of tuples (original_results, embed_results) for each client
         
-        if embed is not None:
-            embedPrec, embedRec, embedF, _ = embed
-            embedPrecL.append(embedPrec)
-            embedRecL.append(embedRec)
-            embedFL.append(embedF)
+    Returns:
+        tuple: (original_metrics, embed_metrics) where each is a dict with mean values
+    """
+    ori_prec_list, ori_rec_list, ori_f1_list = [], [], []
+    embed_prec_list, embed_rec_list, embed_f1_list = [], [], []
+    
+    for ori_results, embed_results in all_results:
+        # Collect original results
+        if ori_results is not None:
+            ori_prec, ori_rec, ori_f1, _ = ori_results
+            ori_prec_list.append(ori_prec)
+            ori_rec_list.append(ori_rec)
+            ori_f1_list.append(ori_f1)
+        
+        # Collect embedding results
+        if embed_results is not None:
+            embed_prec, embed_rec, embed_f1, _ = embed_results
+            embed_prec_list.append(embed_prec)
+            embed_rec_list.append(embed_rec)
+            embed_f1_list.append(embed_f1)
+    
+    # Calculate means for original results
+    ori_metrics = None
+    if ori_prec_list and ori_rec_list and ori_f1_list:
+        ori_metrics = {
+            'precision': np.mean(ori_prec_list),
+            'recall': np.mean(ori_rec_list),
+            'f1': np.mean(ori_f1_list),
+            'std_precision': np.std(ori_prec_list),
+            'std_recall': np.std(ori_rec_list),
+            'std_f1': np.std(ori_f1_list),
+        }
+    
+    # Calculate means for embedding results
+    embed_metrics = None
+    if embed_prec_list and embed_rec_list and embed_f1_list:
+        embed_metrics = {
+            'precision': np.mean(embed_prec_list),
+            'recall': np.mean(embed_rec_list),
+            'f1': np.mean(embed_f1_list),
+            'std_precision': np.std(embed_prec_list),
+            'std_recall': np.std(embed_rec_list),
+            'std_f1': np.std(embed_f1_list),
+        }
+    
+    return ori_metrics, embed_metrics
 
-    # Calculate mean for embed results
-    if embedPrecL and embedRecL and embedFL:
-        embed_mean = (
-            f'Mean of embed results.\n \
-            Precision : {np.mean(np.array(embedPrecL))} \n \
-            Recall : {np.mean(np.array(embedRecL))} \n \
-            F1 : {np.mean(np.array(embedFL))} '
-        )
+
+def print_results(ori_metrics, embed_metrics):
+    """
+    Print aggregated results in a formatted manner.
+    
+    Args:
+        ori_metrics (dict): Original data metrics
+        embed_metrics (dict): Embedding metrics
+    """
+    print("\n" + "=" * 60)
+    print("FEDERATED LEARNING EVALUATION RESULTS")
+    print("=" * 60)
+    
+    if embed_metrics:
+        print("\n📊 Embedding Results (Mean ± Std):")
+        print(f"  Precision: {embed_metrics['precision']:.4f} ± {embed_metrics['std_precision']:.4f}")
+        print(f"  Recall:    {embed_metrics['recall']:.4f} ± {embed_metrics['std_recall']:.4f}")
+        print(f"  F1 Score:  {embed_metrics['f1']:.4f} ± {embed_metrics['std_f1']:.4f}")
     else:
-        embed_mean = "No valid embed results to calculate the mean."
-
-    # Calculate mean for original results
-    if oriPrecL and oriRecL and oriFL:
-        ori_mean = (
-            f'Mean of original results. \n \
-            Precision : {np.mean(np.array(oriPrecL))} \n \
-            Recall : {np.mean(np.array(oriRecL))} \n \
-            F1 : {np.mean(np.array(oriFL))} '
-        )
+        print("\n⚠️  No valid embedding results to calculate metrics.")
+    
+    if ori_metrics:
+        print("\n📊 Original Data Results (Mean ± Std):")
+        print(f"  Precision: {ori_metrics['precision']:.4f} ± {ori_metrics['std_precision']:.4f}")
+        print(f"  Recall:    {ori_metrics['recall']:.4f} ± {ori_metrics['std_recall']:.4f}")
+        print(f"  F1 Score:  {ori_metrics['f1']:.4f} ± {ori_metrics['std_f1']:.4f}")
     else:
-        ori_mean = "No valid original results to calculate the mean."
+        print("\n⚠️  No valid original results to calculate metrics.")
+    
+    print("\n" + "=" * 60)
 
-    print(embed_mean)
-    print(ori_mean)
+
+def main(config):
+    """
+    Main evaluation function for federated learning.
+    
+    Args:
+        config (dict): Configuration dictionary
+    """
+    # Configure for evaluation mode
+    config = configure_for_evaluation(config)
+    
+    # Evaluate each client
+    print(f"\n🚀 Starting evaluation for {config['fl_cluster']} clients...")
+    all_results = []
+    
+    for client_id in range(config["fl_cluster"]):
+        print(f"\n📍 Evaluating Client {client_id + 1}/{config['fl_cluster']}...")
+        results = eval.main(config, client_id)
+        all_results.append(results)
+        print(f"✓ Client {client_id + 1} evaluation complete")
+    
+    # Aggregate results across all clients
+    ori_metrics, embed_metrics = aggregate_results(all_results)
+    
+    # Print final results
+    print_results(ori_metrics, embed_metrics)
+    
+    return ori_metrics, embed_metrics
 
 
 if __name__ == "__main__":
-    # Get parser / command line arguments
+    # Parse command line arguments
     args = get_arguments()
-    # Get configuration file
-    config = get_config(args)
-    # Overwrite the parent folder name for saving results
-    # config["framework"] = config["dataset"]
-    # Get a copy of autoencoder dimensions
-    # dims = copy.deepcopy(config["dims"])
-    config['sampling']=True
-
-    # print_config_summary(config, args)
-    main(config)
     
-
+    # Load configuration
+    config = get_config(args)
+    
+    # Run evaluation
+    main(config)
