@@ -74,7 +74,7 @@ CFL combines:
 
 ### System Overview
 
-
+```
 ┌─────────────────────────────────────────────────┐
 │                    Federated Learning System    │
 ├─────────────────────────────────────────────────┤
@@ -101,37 +101,8 @@ CFL combines:
 │  └────────────────────────────────────────┘     │
 │                                                 │
 └─────────────────────────────────────────────────┘
+```
 
-### Model Architecture
-
-
-Input Data (X)
-│
-├─────────────────┬─────────────────┐
-▼                 ▼                 ▼
-Subset 1          Subset 2          Subset N
-│                 │                 │
-▼                 ▼                 ▼
-Add Noise         Add Noise         Add Noise
-│                 │                 │
-▼                 ▼                 ▼
-┌─────────────────────────────────────────┐
-│           Encoder Network               │
-│  Input → Hidden1 → Hidden2 → Latent    │
-└─────────────────┬───────────────────────┘
-│
-▼
-Latent Representation (Z)
-│
-├──────────────┬──────────────┐
-▼              ▼              ▼
-┌──────────────┐  ┌──────────┐  ┌──────────┐
-│ Contrastive  │  │ Decoder  │  │Projection│
-│    Loss      │  │ Network  │  │ Network  │
-└──────────────┘  └──────────┘  └──────────┘
-│
-▼
-Reconstructed Data (X')
 
 ### Loss Function
 
