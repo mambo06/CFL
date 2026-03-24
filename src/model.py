@@ -309,7 +309,7 @@ class CFL:
         x_batch = th.cat((xi, xj), dim=0)
         return self._tensor(x_batch)
 
-    def save_train_params(self, client):
+    def saveTrainParams(self, client):
         """
         Save training parameters and loss plots.
 
