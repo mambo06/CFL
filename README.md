@@ -128,7 +128,7 @@ Where:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/contrastive-federated-learning.git
+git clone https://github.com/mambo06/CFL.git
 cd contrastive-federated-learning
 
 Step 2: Create Virtual Environment
