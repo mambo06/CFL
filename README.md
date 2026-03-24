@@ -8,22 +8,6 @@
 >
 > 📄 [Read the Paper](https://papers.ssrn.com/abstract=5799977)
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Experimental Results](#experimental-results)
-- [Project Structure](#project-structure)
-- [Citation](#citation)
-- [Acknowledgments](#acknowledgments)
-- [License](#license)
-
----
 
 ## 🎯 Overview
 
